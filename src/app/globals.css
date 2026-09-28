@@ -1,0 +1,31 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+:root {
+  color-scheme: light;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-paper-50 text-ink-900 dark:bg-ink-900 dark:text-paper-50 antialiased;
+}
+
+.prose-editorial h1,
+.prose-editorial h2,
+.prose-editorial h3 {
+  @apply font-display;
+}
+
+/* Accessible focus ring everywhere, since several interactive elements
+   below use custom styling that would otherwise suppress the outline. */
+:focus-visible {
+  outline: 2px solid theme("colors.accent.500");
+  outline-offset: 2px;
+}

@@ -20,15 +20,15 @@
     "job:generate-articles": "tsx src/lib/automation/jobs/generate-articles.ts",
     "job:detect-decay": "tsx src/lib/automation/jobs/detect-decay.ts",
     "job:weekly-report": "tsx src/lib/automation/jobs/weekly-report.ts",
-    "engines:selftest": "tsx scripts/test-engines.ts"
+    "engines:selftest": "tsx scripts/test-engines.ts",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
-    "next": "^15.1.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
+    "next": "14.2.21",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
     "@prisma/client": "^5.22.0",
     "next-auth": "^4.24.10",
-    "@auth/prisma-adapter": "^2.7.4",
     "bcryptjs": "^2.4.3",
     "zod": "^3.24.1",
     "@anthropic-ai/sdk": "^0.32.0",
@@ -42,7 +42,6 @@
     "clsx": "^2.1.1",
     "tailwind-merge": "^2.5.5",
     "rate-limiter-flexible": "^5.0.5",
-    "isomorphic-dompurify": "^2.20.0",
     "react-markdown": "^9.0.1"
   },
   "devDependencies": {
@@ -54,12 +53,12 @@
     "postcss": "^8.4.49",
     "autoprefixer": "^10.4.20",
     "@types/node": "^22.10.1",
-    "@types/react": "^19.0.1",
-    "@types/react-dom": "^19.0.2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/nodemailer": "^6.4.17",
-    "eslint": "^9.16.0",
-    "eslint-config-next": "^15.1.0",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "14.2.21",
     "vitest": "^2.1.6"
   },
   "engines": {

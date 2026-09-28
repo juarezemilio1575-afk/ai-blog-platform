@@ -61,9 +61,7 @@ npm run db:seed       # loads the demo blog: 12 articles, products,
 ```
 
 After seeding, sign in at `/admin/login` with:
-- Email: `admin@example.com`
-- Password: `admin123`
-**Change this password immediately** if you deploy anywhere public.
+- Email/password: whatever you set in `ADMIN_EMAIL` / `ADMIN_PASSWORD` (locally, if unset: `admin@example.com` / `admin123`; in production the seed REFUSES to run without `ADMIN_PASSWORD`).
 
 ## 3. Environment variables
 
@@ -73,7 +71,7 @@ get running locally:
 | Variable | Required for |
 |---|---|
 | `DATABASE_URL` | Everything — the app won't start without it |
-| `AUTH_SECRET` | Admin login (`openssl rand -base64 32`) |
+| `NEXTAUTH_SECRET` | Admin login (`openssl rand -base64 32`) |
 | `ANTHROPIC_API_KEY` or `OPENAI_API_KEY` | Real AI content generation |
 | `CRON_SECRET` | Automation endpoints (see "Automation" below) |
 | `CLOUDINARY_*` | Real image uploads |

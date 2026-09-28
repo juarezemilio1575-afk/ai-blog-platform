@@ -1,0 +1,669 @@
+// =============================================================================
+// AI Blog Platform — Prisma Schema
+// Multi-blog, AI-managed, monetized content platform.
+// Run `npm run db:generate && npm run db:migrate` after setting DATABASE_URL.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// -----------------------------------------------------------------------------
+// Identity & access
+// -----------------------------------------------------------------------------
+
+enum Role {
+  OWNER
+  ADMIN
+  EDITOR
+  WRITER
+  VIEWER
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  passwordHash  String?
+  role          Role      @default(WRITER)
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  blogMemberships BlogMember[]
+  articlesAuthored Article[]      @relation("ArticleAuthor")
+  aiGenerations    AiGeneration[]
+  auditLogs        AuditLog[]
+
+  @@index([email])
+}
+
+// A user can belong to (and have a role on) several blogs — multi-tenant core.
+model BlogMember {
+  id       String  @id @default(cuid())
+  userId   String
+  blogId   String
+  role     Role    @default(WRITER)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  blog Blog @relation(fields: [blogId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, blogId])
+}
+
+// -----------------------------------------------------------------------------
+// Multi-blog / multi-niche core
+// -----------------------------------------------------------------------------
+
+model Blog {
+  id          String   @id @default(cuid())
+  name        String
+  domain      String   @unique
+  niche       String
+  language    String   @default("en")
+  logoUrl     String?
+  themeConfig Json?    // colors, fonts, layout tokens
+  autoPublish Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  members         BlogMember[]
+  articles        Article[]
+  categories      Category[]
+  authors         Author[]
+  topics          Topic[]
+  keywords        Keyword[]
+  contentBriefs   ContentBrief[]
+  products        Product[]
+  affiliatePrograms AffiliateProgram[]
+  images          Image[]
+  socialPosts     SocialPost[]
+  subscribers     Subscriber[]
+  emailCampaigns  EmailCampaign[]
+  automationJobs  AutomationJob[]
+  analytics       AnalyticsSnapshot[]
+  seoMetrics      SeoMetric[]
+  settings        BlogSetting[]
+  revenueEntries  Revenue[]
+  nicheScores     NicheScore[]
+
+  @@index([niche])
+}
+
+model BlogSetting {
+  id     String @id @default(cuid())
+  blogId String
+  key    String // e.g. "ai.provider", "seo.defaultMetaSuffix", "affiliate.autoDisclosure"
+  value  Json
+
+  blog Blog @relation(fields: [blogId], references: [id], onDelete: Cascade)
+
+  @@unique([blogId, key])
+}
+
+// -----------------------------------------------------------------------------
+// Content
+// -----------------------------------------------------------------------------
+
+enum ArticleStatus {
+  IDEA
+  RESEARCHING
+  BRIEFED
+  DRAFTED
+  SEO_OPTIMIZED
+  FACT_CHECKING
+  IN_REVIEW
+  APPROVED
+  SCHEDULED
+  PUBLISHED
+  NEEDS_UPDATE
+  ARCHIVED
+}
+
+model Author {
+  id       String  @id @default(cuid())
+  blogId   String
+  name     String
+  slug     String
+  bio      String?
+  avatarUrl String?
+  isAiAuthor Boolean @default(false)
+
+  blog     Blog      @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  articles Article[]
+
+  @@unique([blogId, slug])
+  @@index([blogId])
+}
+
+model Category {
+  id       String  @id @default(cuid())
+  blogId   String
+  name     String
+  slug     String
+  parentId String?
+
+  blog     Blog       @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id])
+  children Category[] @relation("CategoryTree")
+  articles Article[]
+
+  @@unique([blogId, slug])
+}
+
+model Tag {
+  id     String @id @default(cuid())
+  name   String
+  slug   String @unique
+
+  articles ArticleTag[]
+}
+
+model Topic {
+  id           String   @id @default(cuid())
+  blogId       String
+  title        String   // e.g. "Best Running Shoes" (pillar topic)
+  clusterKey   String   // groups related keywords/articles
+  isPillar     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  blog     Blog      @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  keywords Keyword[]
+  articles Article[]
+
+  @@index([blogId, clusterKey])
+}
+
+enum SearchIntent {
+  INFORMATIONAL
+  COMMERCIAL
+  TRANSACTIONAL
+  NAVIGATIONAL
+  COMPARISON
+}
+
+model Keyword {
+  id               String       @id @default(cuid())
+  blogId           String
+  topicId          String?
+  phrase           String
+  searchIntent     SearchIntent @default(INFORMATIONAL)
+  estimatedVolume  Int?
+  estimatedDifficulty Int?      // 0-100
+  commercialValue  Int?         // 0-100
+  priorityScore    Float?       // computed by keyword-scorer.ts
+  suggestedTitle   String?
+  status           String       @default("discovered") // discovered | clustered | briefed | used
+  createdAt        DateTime     @default(now())
+
+  blog     Blog      @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  topic    Topic?    @relation(fields: [topicId], references: [id])
+  briefs   ContentBrief[]
+  articles Article[]
+
+  @@index([blogId, priorityScore])
+}
+
+model ContentBrief {
+  id                String   @id @default(cuid())
+  blogId            String
+  keywordId         String
+  searchIntent      SearchIntent
+  outline           Json     // H1/H2/H3 tree
+  primaryKeyword    String
+  secondaryKeywords Json     // string[]
+  relatedEntities   Json     // string[]
+  faqs              Json     // {question, answer}[]
+  competitorNotes   String?
+  createdAt         DateTime @default(now())
+
+  blog    Blog     @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  keyword Keyword  @relation(fields: [keywordId], references: [id])
+  article Article?
+
+  @@index([blogId])
+}
+
+model Article {
+  id              String        @id @default(cuid())
+  blogId          String
+  briefId         String?       @unique
+  topicId         String?
+  keywordId       String?
+  authorId        String?
+  authorUserId    String?
+  categoryId      String?
+  title           String
+  slug            String
+  excerpt         String?
+  contentMdx      String        @db.Text
+  metaTitle       String?
+  metaDescription String?
+  status          ArticleStatus @default(IDEA)
+  qualityScore    Int?          // 0-100, from quality-score.ts
+  hasVerifiedTesting Boolean    @default(false) // set true only when a human confirms real hands-on testing occurred
+  heroImageId     String?
+  publishedAt     DateTime?
+  scheduledFor    DateTime?
+  lastOptimizedAt DateTime?
+  decayScore      Float?        // higher = more urgently needs update, from content-decay.ts
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  blog        Blog          @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  brief       ContentBrief? @relation(fields: [briefId], references: [id])
+  topic       Topic?        @relation(fields: [topicId], references: [id])
+  keyword     Keyword?      @relation(fields: [keywordId], references: [id])
+  author      Author?       @relation(fields: [authorId], references: [id])
+  authorUser  User?         @relation("ArticleAuthor", fields: [authorUserId], references: [id])
+  category    Category?     @relation(fields: [categoryId], references: [id])
+
+  tags            ArticleTag[]
+  images          Image[]
+  aiGenerations   AiGeneration[]
+  outboundLinks   InternalLink[]   @relation("SourceArticle")
+  inboundLinks    InternalLink[]   @relation("TargetArticle")
+  seoMetrics      SeoMetric[]
+  socialPosts     SocialPost[]
+  affiliateBlocks ArticleAffiliateBlock[]
+  revenueEntries  Revenue[]
+
+  @@unique([blogId, slug])
+  @@index([blogId, status])
+  @@index([blogId, decayScore])
+}
+
+model ArticleTag {
+  articleId String
+  tagId     String
+
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([articleId, tagId])
+}
+
+model InternalLink {
+  id             String @id @default(cuid())
+  sourceArticleId String
+  targetArticleId String
+  anchorText     String
+  context        String? // surrounding sentence, for auditing
+  createdAt      DateTime @default(now())
+
+  sourceArticle Article @relation("SourceArticle", fields: [sourceArticleId], references: [id], onDelete: Cascade)
+  targetArticle Article @relation("TargetArticle", fields: [targetArticleId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceArticleId, targetArticleId])
+}
+
+model Image {
+  id        String   @id @default(cuid())
+  blogId    String
+  articleId String?
+  url       String
+  altText   String
+  caption   String?
+  prompt    String?  // the brief used to generate/source it
+  seoMetadata Json?
+  createdAt DateTime @default(now())
+
+  blog    Blog     @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  article Article? @relation(fields: [articleId], references: [id])
+}
+
+// -----------------------------------------------------------------------------
+// AI engine bookkeeping (cost control, section 22)
+// -----------------------------------------------------------------------------
+
+enum AiTaskType {
+  TOPIC_DISCOVERY
+  KEYWORD_CLUSTERING
+  CONTENT_BRIEF
+  ARTICLE_DRAFT
+  SEO_OPTIMIZATION
+  FACT_CHECK
+  IMAGE_BRIEF
+  SOCIAL_REPURPOSE
+  NEWSLETTER
+  NICHE_ANALYSIS
+  DECAY_ANALYSIS
+  QUALITY_SCORE
+}
+
+model AiGeneration {
+  id            String     @id @default(cuid())
+  blogId        String?
+  articleId     String?
+  userId        String?
+  taskType      AiTaskType
+  provider      String     // anthropic | openai | mock
+  model         String
+  promptTokens  Int        @default(0)
+  completionTokens Int     @default(0)
+  estimatedCostUsd Float   @default(0)
+  cached        Boolean    @default(false)
+  createdAt     DateTime   @default(now())
+
+  article Article? @relation(fields: [articleId], references: [id])
+  user    User?    @relation(fields: [userId], references: [id])
+
+  @@index([blogId, createdAt])
+  @@index([taskType])
+}
+
+// -----------------------------------------------------------------------------
+// Monetization
+// -----------------------------------------------------------------------------
+
+model AffiliateProgram {
+  id          String  @id @default(cuid())
+  blogId      String
+  name        String  // e.g. "Amazon Associates", "Awin", "Impact"
+  network     String
+  defaultCommissionPct Float?
+  isActive    Boolean @default(true)
+
+  blog     Blog      @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  products Product[]
+}
+
+model Product {
+  id                 String   @id @default(cuid())
+  blogId             String
+  affiliateProgramId String?
+  name               String
+  description        String?
+  price              Float?
+  currency           String   @default("USD")
+  imageUrl           String?
+  merchant           String?
+  affiliateUrl       String
+  category           String?
+  rating             Float?
+  commissionPct      Float?
+  lastCheckedAt      DateTime?
+  createdAt          DateTime @default(now())
+
+  blog             Blog              @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  affiliateProgram AffiliateProgram? @relation(fields: [affiliateProgramId], references: [id])
+  affiliateBlocks  ArticleAffiliateBlock[]
+  clicks           AffiliateClick[]
+  conversions      Conversion[]
+
+  @@index([blogId, category])
+}
+
+enum AffiliateBlockType {
+  PRODUCT_CARD
+  COMPARISON_TABLE
+  BEST_CHOICE
+  BUDGET_CHOICE
+  PREMIUM_CHOICE
+}
+
+// Lets an article reference a product via a swappable block — change the
+// affiliate link centrally (on Product) without touching article content.
+model ArticleAffiliateBlock {
+  id        String             @id @default(cuid())
+  articleId String
+  productId String
+  blockType AffiliateBlockType
+  position  Int                @default(0)
+
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+}
+
+model AffiliateClick {
+  id         String   @id @default(cuid())
+  productId  String
+  articleId  String?
+  sessionId  String?
+  referrer   String?
+  userAgent  String?
+  clickedAt  DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, clickedAt])
+}
+
+model Conversion {
+  id         String   @id @default(cuid())
+  productId  String
+  orderValue Float?
+  commissionUsd Float?
+  convertedAt DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, convertedAt])
+}
+
+enum RevenueSource {
+  AFFILIATE
+  ADSENSE
+  SPONSORED
+  DIGITAL_PRODUCT
+  LEAD_GEN
+  OTHER
+}
+
+model Revenue {
+  id        String        @id @default(cuid())
+  blogId    String
+  articleId String?
+  source    RevenueSource
+  amountUsd Float
+  date      DateTime      @default(now())
+  notes     String?
+
+  blog    Blog     @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  article Article? @relation(fields: [articleId], references: [id])
+
+  @@index([blogId, date, source])
+}
+
+// -----------------------------------------------------------------------------
+// SEO & analytics
+// -----------------------------------------------------------------------------
+
+model SeoMetric {
+  id             String   @id @default(cuid())
+  blogId         String
+  articleId      String?
+  date           DateTime @default(now())
+  impressions    Int      @default(0)
+  clicks         Int      @default(0)
+  ctr            Float    @default(0)
+  avgPosition    Float?
+  topQuery       String?
+
+  blog    Blog     @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  article Article? @relation(fields: [articleId], references: [id])
+
+  @@index([blogId, date])
+  @@index([articleId, date])
+}
+
+model NicheScore {
+  id                    String   @id @default(cuid())
+  blogId                String?
+  niche                 String
+  searchDemandScore     Int
+  competitionScore      Int
+  affiliateOpportunityScore Int
+  cpcPotentialScore     Int
+  contentOpportunityScore Int
+  difficultyScore       Int
+  overallScore          Int      // 0-100
+  createdAt             DateTime @default(now())
+
+  blog Blog? @relation(fields: [blogId], references: [id])
+
+  @@index([niche])
+}
+
+model AnalyticsSnapshot {
+  id            String   @id @default(cuid())
+  blogId        String
+  date          DateTime @default(now())
+  organicTraffic Int     @default(0)
+  pageViews     Int      @default(0)
+  uniqueVisitors Int     @default(0)
+  avgSessionSec Int      @default(0)
+  bounceRatePct Float?
+
+  blog Blog @relation(fields: [blogId], references: [id], onDelete: Cascade)
+
+  @@unique([blogId, date])
+}
+
+// -----------------------------------------------------------------------------
+// Distribution: social + email
+// -----------------------------------------------------------------------------
+
+enum SocialPlatform {
+  X
+  FACEBOOK
+  LINKEDIN
+  PINTEREST
+  INSTAGRAM
+  VIDEO_SCRIPT
+  NEWSLETTER
+}
+
+model SocialPost {
+  id         String         @id @default(cuid())
+  blogId     String
+  articleId  String
+  platform   SocialPlatform
+  content    String         @db.Text
+  status     String         @default("draft") // draft | scheduled | posted
+  scheduledFor DateTime?
+  postedAt   DateTime?
+
+  blog    Blog    @relation(fields: [blogId], references: [id], onDelete: Cascade)
+  article Article @relation(fields: [articleId], references: [id], onDelete: Cascade)
+
+  @@index([blogId, platform])
+}
+
+model Subscriber {
+  id          String   @id @default(cuid())
+  blogId      String
+  email       String
+  segment     String?  // e.g. "engaged", "cold", "buyers"
+  subscribedAt DateTime @default(now())
+  unsubscribedAt DateTime?
+
+  blog Blog @relation(fields: [blogId], references: [id], onDelete: Cascade)
+
+  @@unique([blogId, email])
+}
+
+model EmailCampaign {
+  id         String   @id @default(cuid())
+  blogId     String
+  subject    String
+  bodyMdx    String   @db.Text
+  segment    String?
+  type       String   @default("digest") // welcome | digest | new_article | product_recs
+  sentAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  blog Blog @relation(fields: [blogId], references: [id], onDelete: Cascade)
+}
+
+// -----------------------------------------------------------------------------
+// Automation & audit
+// -----------------------------------------------------------------------------
+
+enum JobStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+}
+
+model AutomationJob {
+  id        String    @id @default(cuid())
+  blogId    String?
+  jobKey    String    // e.g. "discover-keywords", "generate-briefs"
+  status    JobStatus @default(PENDING)
+  startedAt DateTime?
+  finishedAt DateTime?
+  log       String?   @db.Text
+  createdAt DateTime  @default(now())
+
+  blog Blog? @relation(fields: [blogId], references: [id])
+
+  @@index([jobKey, createdAt])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id])
+
+  @@index([entity, entityId])
+}
+
+// -----------------------------------------------------------------------------
+// Monitoring, budget guard, and human-in-the-loop approvals (Phases 14, 17, 19)
+// -----------------------------------------------------------------------------
+
+model SystemAlert {
+  id        String   @id @default(cuid())
+  severity  String   // info | warning | critical
+  category  String   // budget | cron | api_error | traffic_anomaly | revenue_anomaly | broken_link | indexing
+  message   String
+  metadata  Json?
+  resolved  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([resolved, severity])
+}
+
+// Anything the Growth Agent (Phase 14) decides but that involves spending
+// money, deleting data, purchasing a service, or changing domain/structure
+// stops here instead of executing automatically.
+model ApprovalRequest {
+  id          String    @id @default(cuid())
+  blogId      String?
+  type        String    // spend | delete_data | purchase_service | domain_change | structure_change
+  description String
+  proposedBy  String    @default("growth-agent")
+  status      String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  createdAt   DateTime  @default(now())
+  resolvedAt  DateTime?
+
+  @@index([status])
+}
+
+// Lets Phase 7's daily schedule be edited from the Dashboard instead of
+// hardcoded in vercel.json — a single frequent cron (see
+// /api/automation/dispatcher) reads these rows and fires the matching job
+// when the current time matches, so changing a time here takes effect
+// immediately with no redeploy.
+model AutomationSchedule {
+  id        String   @id @default(cuid())
+  jobKey    String   @unique // discover-keywords | generate-articles | fact-check | seo-optimize | internal-linking | social-prepare | publish-scheduled | performance-analysis | daily-report | detect-decay | growth-agent
+  hour      Int      // 0-23, UTC
+  minute    Int      @default(0)
+  daysOfWeek Json?   // null/omitted = every day; otherwise e.g. [1] for Monday only
+  enabled   Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+}
